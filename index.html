@@ -2028,18 +2028,29 @@ function commitField(el){
   if(!m) return;
   const [, kind, key, idxStr] = m;
   const idx = Number(idxStr);
+  // Committing a field you did not actually change should do nothing: it is not
+  // an edit, so it must not take the driver or mark anything as auto-filled.
+  const unchanged = (stored, typed) => {
+    const scale = Math.max(Math.abs(stored), Math.abs(typed), 1e-12);
+    return Math.abs(stored - typed) <= 1e-9 * scale;
+  };
+  if(kind === 'F' && unchanged(state.forces[key][idx], frF(v))){ render(); return; }
+  if(kind === 'u' && unchanged(state.disp[key][idx], frL(v))){ render(); return; }
+  if(kind === 'S' && unchanged(state.stress[Number(key)][idx], frS(v))){ render(); return; }
+  if(kind === 'E' && unchanged(state.grad[Number(key)][idx], v)){ render(); return; }
 
   if(kind === 'F'){
     state.driver = 'forces';
     lastEdit = {kind:'F', face:key, idx, value:frF(v)};
-    derived.delete(id); derived.add(partnerId('F', key, idx));
+    derived.delete(id);
     state.forces[key][idx] = frF(v);
+    // Only balancing fills other fields, so only then is a partner derived.
     if(state.autoBal) markPartnersDerived('F', key, idx);
     recompute();
   }else if(kind === 'u'){
     state.driver = 'disp';
     lastEdit = {kind:'u', face:key, idx, value:frL(v)};
-    derived.delete(id); derived.add(partnerId('u', key, idx));
+    derived.delete(id);
     state.disp[key][idx] = frL(v);
     if(state.autoBal) markPartnersDerived('u', key, idx);
     recompute();
@@ -2078,8 +2089,19 @@ document.addEventListener('focusout', e => {
   if(e.target.matches('input[type=number]')){ const el = e.target; editing = null; commitField(el); }
 });
 document.addEventListener('keydown', e => {
-  if(e.key === 'Enter' && e.target.matches('input[type=number]')){ e.preventDefault(); e.target.blur(); }
-  if(e.key === 'Escape' && e.target.matches('input[type=number]')){ editing = null; render(); e.target.blur(); }
+  // A keydown can land on the document itself, which has no matches(), so test
+  // for it rather than assuming the target is an element.
+  const isField = sel => e.target && e.target.matches && e.target.matches(sel);
+  // Ctrl+Z, or Cmd+Z on a Mac. Left alone while a field has focus, so the
+  // browser's own undo still works inside the box you are typing in.
+  if((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')){
+    if(isField('input, textarea')) return;
+    const btn = $('#btnUndo');
+    if(btn && !btn.disabled){ e.preventDefault(); btn.click(); }
+    return;
+  }
+  if(e.key === 'Enter' && isField('input[type=number]')){ e.preventDefault(); e.target.blur(); }
+  if(e.key === 'Escape' && isField('input[type=number]')){ editing = null; render(); e.target.blur(); }
 });
 
 /* =========================================================================
@@ -2943,6 +2965,9 @@ function commitField2(el, v){
   let m = id.match(/^([FuSE])2-(.+)-(\d)$/);
   if(m){
     const [, kind, key, idxStr] = m, idx = Number(idxStr);
+    const same = (a,b) => Math.abs(a-b) <= 1e-9 * Math.max(Math.abs(a), Math.abs(b), 1e-12);
+    if(kind === 'F' && same(W2.forces[key][idx], frF(v))){ render(); return true; }
+    if(kind === 'u' && same(W2.disp[key][idx], frL(v))){ render(); return true; }
     if(kind === 'F'){
       W2.driver = 'forces'; W2.forces[key][idx] = frF(v);
       W2.lastEdit = {kind:'F', edge:key, idx, value:frF(v)};
