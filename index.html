@@ -359,7 +359,7 @@ dialog::backdrop{background:rgba(6,16,18,.55)}
     </div>
 
     <div class="block" id="blkPrism">
-      <h2>Prism</h2>
+      <h2>Prism dimensions <span class="hint" id="dimUnit">mm</span></h2>
       <table class="grid" id="dimTable">
         <tr>
           <th>L<sub>x</sub></th><th>L<sub>y</sub></th><th>L<sub>z</sub></th>
@@ -1806,6 +1806,7 @@ function render(){
     ml.style.color = state.material ? 'var(--ok)' : '';
   }
 
+  $('#dimUnit').textContent = u().len;
   for(let i=0;i<3;i++) setVal($(['#Lx','#Ly','#Lz'][i]), toL(state.dim[i]), false);
   const A = areas(state.dim);
   $('#areaNote').textContent =
@@ -4592,6 +4593,7 @@ function render2All(){
       : 'Material: none — stress and strain are independent here.';
     ml.style.color = W2.material ? 'var(--ok)' : '';
   }
+  $('#dimUnit').textContent = u().len;
   for(let i=0;i<2;i++) setVal($(['#Lx','#Ly'][i]), toL(W2.dim[i]), false);
   const A = areas2(W2.dim);
   $('#areaNote').textContent =
