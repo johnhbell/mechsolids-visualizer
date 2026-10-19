@@ -92,7 +92,7 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-0.01em}
 .eigcell .eigcap{font:400 .64rem/1.2 var(--sans); color:var(--ink-soft); letter-spacing:.02em}
 /* The chart scales with its column, so cap the width or a wide band makes it
    taller than the band itself. */
-.mohr{width:100%; max-width:380px; height:auto; display:block; margin-top:.4rem}
+.mohr{width:100%; max-width:460px; height:auto; display:block; margin-top:.4rem}
 
 /* ---------- layout ---------- */
 main{
@@ -145,6 +145,8 @@ input.shear-c{border-left:2px solid var(--shear)}
   font:var(--mono); font-size:.8rem;
 }
 .readout dt{color:var(--ink-soft); font-size:.74rem}
+.readout dt.sect{grid-column:1 / -1; color:var(--ink); font-weight:600; margin-top:.4rem;
+  padding-top:.32rem; border-top:1px solid var(--rule-soft)}
 .readout dd{margin:0; text-align:right; font-weight:500}
 .tensor{border-collapse:collapse; width:100%; font:500 .82rem/1.1 var(--mono)}
 .tensor td{padding:1px; text-align:right}
@@ -4156,16 +4158,37 @@ function renderTransform(){
   VIEWS[1].label.textContent = isStress ? 'Loaded prism, global frame' : 'Deformed prism, global frame';
   VIEWS[2].label.textContent = 'The inner cube, seen from x′ y′ z′';
 
-  // band: invariants, plus Mohr for stress
+  // band: one chart, one readout (what the rotation leaves alone, then the
+  // faces), one note. Strain is quoted in microstrain throughout, so the table
+  // and the chart axes read in the same units.
   const pv = principalValues(P);
+  const cv = isStress ? toS : (v => v*1e6);
+  const un = isStress ? u().stress : 'με';
   const invRows = isStress
-    ? `<dt>trace</dt><dd>${fmt(toS(P[0][0]+P[1][1]+P[2][2]),1)} ${u().stress}</dd>
-       <dt>σ₁ σ₂ σ₃</dt><dd>${pv.map(v=>fmt(toS(v),1)).join('  ')}</dd>
-       <dt>τ<sub>max</sub></dt><dd>${fmt(toS((pv[0]-pv[2])/2),1)} ${u().stress}</dd>
-       <dt>von Mises</dt><dd>${fmt(toS(vonMises(P)),1)} ${u().stress}</dd>`
-    : `<dt>volumetric</dt><dd>${fmt(P[0][0]+P[1][1]+P[2][2])}</dd>
-       <dt>ε₁ ε₂ ε₃</dt><dd>${pv.map(v=>fmt(v)).join('  ')}</dd>
-       <dt>γ<sub>max</sub></dt><dd>${fmt(pv[0]-pv[2])}</dd>`;
+    ? `<dt>trace</dt><dd>${fmt(cv(P[0][0]+P[1][1]+P[2][2]),1)} ${un}</dd>
+       <dt>σ₁ σ₂ σ₃</dt><dd>${pv.map(v=>fmt(cv(v),1)).join('  ')}</dd>
+       <dt>τ<sub>max</sub></dt><dd>${fmt(cv((pv[0]-pv[2])/2),1)} ${un}</dd>
+       <dt>von Mises</dt><dd>${fmt(cv(vonMises(P)),1)} ${un}</dd>`
+    : `<dt>volumetric</dt><dd>${fmt(cv(P[0][0]+P[1][1]+P[2][2]),1)} ${un}</dd>
+       <dt>ε₁ ε₂ ε₃</dt><dd>${pv.map(v=>fmt(cv(v),1)).join('  ')}</dd>
+       <dt>γ<sub>max</sub></dt><dd>${fmt(cv(pv[0]-pv[2]),1)} ${un}</dd>`;
+  // One point per face: the normal component on the diagonal, and the magnitude
+  // of the shear resultant built from the two in-plane terms in that row.
+  const facePts = Tn => [0,1,2].map(i => {
+    const a = (i+1)%3, b = (i+2)%3;
+    return [Tn[i][i], Math.hypot(Tn[i][a], Tn[i][b])];
+  });
+  const basePts = facePts(G), primPts = facePts(P);
+  const faceRows = (pts, labs) => pts.map((q,i) =>
+    `<dt>${labs[i]}</dt><dd>(${fmt(cv(q[0]),1)}, ${fmt(cv(q[1]),1)})</dd>`).join('');
+  const readout = `<dl class="readout">${invRows}
+      <dt class="sect">Face by face</dt>
+      ${faceRows(basePts, ['X','Y','Z'])}${faceRows(primPts, ['X′','Y′','Z′'])}</dl>
+    <p class="note">Each point is (${isStress ? 'σₙ, |τ|' : 'ε, |γ|/2'}) on one face, in ${un}:
+      X Y Z are the faces normal to x, y and z, X′ Y′ Z′ those normal to x′, y′ and z′.
+      A face in space shears in two directions at once, so only the magnitude of the shear is
+      defined — hence the half plane, and hence points that sit inside the region the three
+      circles bound rather than on any one of them.</p>`;
   const offDiag = T => Math.max(Math.abs(T[0][1]), Math.abs(T[0][2]), Math.abs(T[1][2]));
   const other = transformTensor2(isStress ? strainTensor() : symPart(state.stress), M);
   const aligned = offDiag(P) < 1e-6*(maxAbsMat(P)||1) && offDiag(other) > 1e-4*(maxAbsMat(other)||1);
@@ -4177,11 +4200,11 @@ function renderTransform(){
     : `<p class="note">Same physical state, two frames. Every number on the right follows from the left by
         ${isStress ? 'σ′ = Qσ Qᵀ' : 'ε′ = Qε Qᵀ'}, with Q from the rotation at left.</p>`;
   band.innerHTML = `<div class="bandrow">
-      <div><p class="cap">Unchanged by rotation</p><dl class="readout">${invRows}</dl></div>
-      ${isStress ? `<div style="flex:1 1 320px"><p class="cap">Mohr circles</p><div id="mohr"></div></div>` : ''}
-      <div style="flex:2 1 320px">${note}</div>
+      <div style="flex:1 1 420px; max-width:470px"><p class="cap">Mohr circles</p>
+        <div id="mohr"></div>${readout}</div>
+      <div style="flex:1 1 300px">${note}</div>
     </div>`;
-  if(isStress) renderMohr(pv);
+  renderMohr(pv, isStress, basePts, primPts);
 }
 function renderElasticTransform(M, band){
   $('#tt2').hidden = true; $('#tt3').hidden = true;
@@ -4313,81 +4336,132 @@ function niceStep(span, target){
   const n = raw / mag;
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag;
 }
-function renderMohr(pv){
-  const [s1, s2, s3] = pv.map(toS);
+function renderMohr(pv, isStress, basePts, primPts){
+  // Strain is plotted in microstrain. The 3D ordinate is a magnitude: a face in
+  // space carries shear in two in-plane directions at once, so the resultant has
+  // no sign, and the chart is a half plane rather than a mirrored full one.
+  const conv = isStress ? toS : (v => v*1e6);
+  const unit = isStress ? u().stress : 'με';
+  const host = $('#mohr');
+  if(!host) return;
+  const [s1, s2, s3] = pv.map(conv);
   const R = (s1 - s3) / 2;
-  if(!isFinite(R)){ $('#mohr').innerHTML = ''; return; }
-  // When the three principal stresses coincide there is no circle to draw:
+  if(!isFinite(R)){ host.innerHTML = ''; return; }
+  // When the three principal values coincide there is no circle to draw:
   // the whole construction collapses to a single point on the axis.
   const scale = Math.max(Math.abs(s1), Math.abs(s3), 1);
   if(R <= 1e-9 * scale){
     const p = (s1 + s2 + s3)/3;
-    $('#mohr').innerHTML = Math.abs(p) <= 1e-9
-      ? `<p class="note">No stress applied, so there is nothing to draw.</p>`
-      : `<p class="note"><strong>Hydrostatic state.</strong> All three principal stresses are
-         ${fmt(p,2)} ${u().stress}, so the three circles collapse to a single point at
-         σ<sub>n</sub> = ${fmt(p,2)}, τ = 0. Every plane through the point carries the same normal
+    if(Math.abs(p) <= 1e-9){
+      host.innerHTML = `<p class="note">${isStress ? 'No stress applied' : 'No strain'}, so there is
+        nothing to draw.</p>`;
+      return;
+    }
+    host.innerHTML = isStress
+      ? `<p class="note"><strong>Hydrostatic state.</strong> All three principal stresses are
+         ${fmt(p,2)} ${unit}, so the three circles collapse to a single point at
+         σ<sub>n</sub> = ${fmt(p,2)}, |τ| = 0. Every plane through the point carries the same normal
          stress and no shear at all, which is why τ<sub>max</sub> is zero and no direction is
-         distinguished: every direction is principal.</p>`;
+         distinguished: every direction is principal.</p>`
+      : `<p class="note"><strong>Pure volume change.</strong> All three principal strains are
+         ${fmt(p,1)} ${unit}, so the three circles collapse to a single point at
+         ε = ${fmt(p,1)} ${unit}, |γ|/2 = 0. The element ${p > 0 ? 'swells' : 'shrinks'} by the same
+         fraction in every direction and changes shape in none, so there is no shear on any plane:
+         γ<sub>max</sub> is zero and every direction is principal.</p>`;
     return;
   }
-  const W = 340, H = 215, L = 46, Rm = 14, T = 12, B = 30;
+  const W = 460, H = 264, L = 46, Rm = 14, T = 12, B = 44;
   const xLo = Math.min(s3, 0), xHi = Math.max(s1, 0);
   const xPad = (xHi - xLo || 1) * 0.08;
   const spanX = (xHi - xLo) + 2*xPad || 1;
-  const spanY = (2*R) * 1.16 || 1;
+  const spanY = R * 1.14 || 1;                  // zero up to just past the largest radius
   // one scale for both axes, or the circles would not be circles
   const k = Math.min((W - L - Rm)/spanX, (H - T - B)/spanY);
-  const cx0 = (xLo + xHi)/2, plotCx = L + (W - L - Rm)/2, plotCy = T + (H - T - B)/2;
+  const cx0 = (xLo + xHi)/2, plotCx = L + (W - L - Rm)/2, baseY = H - B;
   const X = v => plotCx + (v - cx0)*k;
-  const Y = v => plotCy - v*k;
+  const Y = v => baseY - v*k;                   // the axis IS the floor of the plot
 
-  const stepX = niceStep(spanX, 5), stepY = niceStep(spanY, 4);
+  const stepX = niceStep(spanX, 5), stepY = niceStep(spanY, 3);
   const ticksX = [], ticksY = [];
   for(let v = Math.ceil((xLo - xPad)/stepX)*stepX; v <= xHi + xPad + 1e-9; v += stepX) ticksX.push(v);
-  for(let v = 0; v <= R*1.08 + 1e-9; v += stepY){ ticksY.push(v); if(v > 0) ticksY.push(-v); }
+  for(let v = stepY; v <= R*1.06 + 1e-9; v += stepY) ticksY.push(v);
 
   const grid = ticksX.map(v =>
-      `<line x1="${X(v)}" y1="${T}" x2="${X(v)}" y2="${H-B}" stroke="var(--rule-soft)" stroke-width=".5"/>`)
+      `<line x1="${X(v)}" y1="${T}" x2="${X(v)}" y2="${baseY}" stroke="var(--rule-soft)" stroke-width=".5"/>`)
     .concat(ticksY.map(v =>
       `<line x1="${L}" y1="${Y(v)}" x2="${W-Rm}" y2="${Y(v)}" stroke="var(--rule-soft)" stroke-width=".5"/>`))
     .join('');
-  const circles = [[s1,s3],[s1,s2],[s2,s3]].map(([a,b],i) =>
-    `<circle cx="${X((a+b)/2)}" cy="${Y(0)}" r="${Math.abs(X(a)-X(b))/2}"
-       fill="${i ? 'var(--panel)' : 'var(--shear)'}" fill-opacity="${i ? '1' : '0.16'}"
-       stroke="var(--ink-soft)" stroke-width="1"/>`).join('');
+  // Full circles clipped to the half plane: the geometry stays simple and the
+  // mirrored half, which means nothing for a shear magnitude, never appears.
+  const circles = `<g clip-path="url(#mohrClip3)">` +
+    [[s1,s3],[s1,s2],[s2,s3]].map(([a,b],i) =>
+      `<circle cx="${X((a+b)/2)}" cy="${Y(0)}" r="${Math.abs(X(a)-X(b))/2}"
+         fill="${i ? 'var(--panel)' : 'var(--shear)'}" fill-opacity="${i ? '1' : '0.16'}"
+         stroke="var(--ink-soft)" stroke-width="1"/>`).join('') + `</g>`;
   const axes =
     `<line x1="${L}" y1="${Y(0)}" x2="${W-Rm}" y2="${Y(0)}" stroke="var(--ink-soft)" stroke-width="1"/>
      <line x1="${X(0) >= L && X(0) <= W-Rm ? X(0) : L}" y1="${T}"
-           x2="${X(0) >= L && X(0) <= W-Rm ? X(0) : L}" y2="${H-B}"
+           x2="${X(0) >= L && X(0) <= W-Rm ? X(0) : L}" y2="${baseY}"
            stroke="var(--ink-soft)" stroke-width="1"/>`;
   const labX = ticksX.map(v =>
     `<line x1="${X(v)}" y1="${Y(0)}" x2="${X(v)}" y2="${Y(0)+3}" stroke="var(--ink-soft)"/>
-     <text x="${X(v)}" y="${H-B+13}" font-size="9" text-anchor="middle"
+     <text x="${X(v)}" y="${baseY+12}" font-size="9" text-anchor="middle"
        fill="var(--ink-soft)" font-family="var(--mono)">${fmt(v,0)}</text>`).join('');
   const x0 = X(0) >= L && X(0) <= W-Rm ? X(0) : L;
-  const labY = ticksY.filter(v => v !== 0).map(v =>
+  const labY = ticksY.map(v =>
     `<line x1="${x0-3}" y1="${Y(v)}" x2="${x0}" y2="${Y(v)}" stroke="var(--ink-soft)"/>
      <text x="${L-6}" y="${Y(v)+3}" font-size="9" text-anchor="end"
        fill="var(--ink-soft)" font-family="var(--mono)">${fmt(v,0)}</text>`).join('');
-  const marks = [[s1,'σ₁'],[s2,'σ₂'],[s3,'σ₃']].map(([v,lab]) =>
+  const pLab = isStress ? ['σ₁','σ₂','σ₃'] : ['ε₁','ε₂','ε₃'];
+  const marks = [[s1,pLab[0]],[s2,pLab[1]],[s3,pLab[2]]].map(([v,lab]) =>
     `<line x1="${X(v)}" y1="${Y(0)-4}" x2="${X(v)}" y2="${Y(0)+4}" stroke="var(--ink)" stroke-width="1.4"/>
-     <text x="${X(v)}" y="${Y(0)-7}" font-size="9" text-anchor="middle"
+     <text x="${X(v)}" y="${baseY+24}" font-size="9" text-anchor="middle"
        fill="var(--ink)" font-family="var(--mono)">${lab}</text>`).join('');
   const tauMax = `<line x1="${X((s1+s3)/2)}" y1="${Y(0)}" x2="${X((s1+s3)/2)}" y2="${Y(R)}"
        stroke="var(--shear)" stroke-width="1.2" stroke-dasharray="3,2"/>
      <text x="${X((s1+s3)/2)+4}" y="${Y(R)+9}" font-size="9" fill="var(--shear)"
-       font-family="var(--mono)">τmax ${fmt(R,1)}</text>`;
-  $('#mohr').innerHTML =
+       font-family="var(--mono)">${isStress ? 'τmax ' + fmt(R,1) : 'γmax/2 ' + fmt(R,0)}</text>`;
+  const dots = mohrDots([
+    {pts: basePts, labs:['X','Y','Z'], faint:true},
+    {pts: primPts, labs:['X′','Y′','Z′'], faint:false}
+  ], conv, X, Y, X(cx0), Y(0));
+  host.innerHTML =
     `<svg class="mohr" viewBox="0 0 ${W} ${H}" role="img"
-       aria-label="Mohr circles for the current stress state">
-       ${grid}${axes}${circles}${labX}${labY}${marks}${tauMax}
-       <text x="${W-Rm}" y="${H-B+24}" font-size="9" text-anchor="end" fill="var(--ink-soft)"
-         font-family="var(--mono)">σₙ (${u().stress})</text>
-       <text x="${L-6}" y="${T+8}" font-size="9" text-anchor="end" fill="var(--ink-soft)"
-         font-family="var(--mono)">τ (${u().stress})</text>
+       aria-label="Mohr circles for the current ${isStress ? 'stress' : 'strain'} state">
+       <defs><clipPath id="mohrClip3"><rect x="${L}" y="${T}"
+         width="${W-Rm-L}" height="${baseY-T}"/></clipPath></defs>
+       ${grid}${axes}${circles}${labX}${labY}${marks}${tauMax}${dots}
+       <text x="${W-Rm}" y="${baseY+37}" font-size="9" text-anchor="end" fill="var(--ink-soft)"
+         font-family="var(--mono)">${isStress ? 'σₙ (' + unit + ')' : 'ε (' + unit + ')'}</text>
+       <text x="2" y="${T+8}" font-size="9" text-anchor="start" fill="var(--ink-soft)"
+         font-family="var(--mono)">${isStress ? '|τ| (' + unit + ')' : '|γ|/2 (' + unit + ')'}</text>
      </svg>`;
 }
+// Face points, drawn the same way on both charts: the global frame faint and
+// behind, the rotated frame solid and in front, each labelled with a bare
+// letter and nothing else — the numbers live in the readout under the chart.
+function mohrDots(sets, conv, X, Y, cx, cy){
+  let out = '';
+  for(const set of sets){
+    const colour = set.faint ? 'var(--ink-soft)' : 'var(--ink)';
+    set.pts.forEach((p, i) => {
+      const px = X(conv(p[0])), py = Y(conv(p[1]));
+      let dx = px - cx, dy = py - cy, n = Math.hypot(dx, dy);
+      if(n < 1e-6){ dx = 0; dy = -1; n = 1; }
+      const off = set.faint ? 18 : 10;
+      const lx = px + dx/n*off, ly = py + dy/n*off;
+      out += `<circle cx="${px}" cy="${py}" r="${set.faint ? 2.4 : 3.1}" fill="${colour}"
+                fill-opacity="${set.faint ? 0.45 : 1}"/>
+              <text x="${lx}" y="${ly + 3}" font-size="${set.faint ? 9 : 10}"
+                text-anchor="${dx > 2 ? 'start' : dx < -2 ? 'end' : 'middle'}"
+                fill="${colour}" fill-opacity="${set.faint ? 0.6 : 1}"
+                font-weight="${set.faint ? 400 : 600}"
+                font-family="var(--mono)">${set.labs[i]}</text>`;
+    });
+  }
+  return out;
+}
+
 function renderEigen(){
   const C = state.matC;
   const note = $('#eigenNote');
@@ -4479,14 +4553,26 @@ function drawModeThumb(cv, E){
 }
 
 /* --- controls --------------------------------------------------------- */
+function syncRotControls(){
+  const put = (id, deg) => {
+    $('#rot'+id).value = Math.max(-180, Math.min(180, deg));
+    if($('#rot'+id+'n') !== editing) $('#rot'+id+'n').value = fmt(deg, 1);
+  };
+  if(state.world === '2d') put('X', W2.rot*180/Math.PI);
+  else for(const [i,id] of [[0,'X'],[1,'Y'],[2,'Z']]) put(id, state.rot[i]*180/Math.PI);
+}
+function syncSubButtons(){
+  const cur = state.world === '2d' ? W2.sub : state.sub;
+  for(const [id,v] of [['#subStress','stress'],['#subStrain','strain'],['#subElastic','elastic']])
+    $(id).setAttribute('aria-pressed', String(cur === v));
+}
 $('#subbar').addEventListener('click', e => {
   const b = e.target.closest('button');
   if(!b) return;
   const map = {subStress:'stress', subStrain:'strain', subElastic:'elastic'};
   if(!map[b.id]) return;
   if(state.world === '2d') W2.sub = map[b.id]; else state.sub = map[b.id];
-  const cur = state.world === '2d' ? W2.sub : state.sub;
-  for(const [id,v] of Object.entries(map)) $('#'+id).setAttribute('aria-pressed', String(cur === v));
+  syncSubButtons();
   render();
 });
 for(const [i,id] of [[0,'X'],[1,'Y'],[2,'Z']]){
@@ -4548,6 +4634,18 @@ function setWorld(w){
   state.world = w;
   $('#btn2d').setAttribute('aria-pressed', String(w === '2d'));
   $('#btn3d').setAttribute('aria-pressed', String(w === '3d'));
+  // The sub-mode says which tensor you are looking at, so it follows you across
+  // the dimension switch; the two worlds' own state (loads, material, geometry)
+  // stays separate as before. Without this the shared buttons kept showing the
+  // sub-mode of the world you just left.
+  // The rotation controls are shared chrome, but the angle behind them belongs
+  // to whichever world you are in: three Euler angles in 3D, one in-plane angle
+  // in 2D. They are different quantities, so the angle does not travel across
+  // the switch — but the boxes must be re-read from the world you land in, or
+  // they show the angle of the world you left while the drawing uses the real one.
+  if(w === '2d') W2.sub = state.sub; else state.sub = W2.sub;
+  syncSubButtons();
+  syncRotControls();
   if(w === '2d') build2DTables(); else build3DTables();
   if(state.mode === 'activity'){ buildActTables(); if(act().C) buildActAnswer(); }
   // each world has its own material library, so the picker is rebuilt too
@@ -4890,32 +4988,59 @@ function renderTransform2(){
   $('#tt3').innerHTML = body(P, `${isStress?'σ′':'ε′'} in x′, y′${unit}`);
 
   const p = principal2(P);
+  const cv = isStress ? toS : (v => v*1e6);
+  const un = isStress ? u().stress : 'με';
   const invRows = isStress
-    ? `<dt>trace</dt><dd>${fmt(toS(P[0][0]+P[1][1]),1)} ${u().stress}</dd>
-       <dt>σ₁ σ₂</dt><dd>${p.values.map(v=>fmt(toS(v),1)).join('  ')}</dd>
-       <dt>τ<sub>max</sub></dt><dd>${fmt(toS(p.radius),1)} ${u().stress}</dd>`
-    : `<dt>areal</dt><dd>${fmt(P[0][0]+P[1][1])}</dd>
-       <dt>ε₁ ε₂</dt><dd>${p.values.map(v=>fmt(v)).join('  ')}</dd>
-       <dt>γ<sub>max</sub></dt><dd>${fmt(2*p.radius)}</dd>`;
+    ? `<dt>trace</dt><dd>${fmt(cv(P[0][0]+P[1][1]),1)} ${un}</dd>
+       <dt>σ₁ σ₂</dt><dd>${p.values.map(v=>fmt(cv(v),1)).join('  ')}</dd>
+       <dt>τ<sub>max</sub></dt><dd>${fmt(cv(p.radius),1)} ${un}</dd>`
+    : `<dt>areal</dt><dd>${fmt(cv(P[0][0]+P[1][1]),1)} ${un}</dd>
+       <dt>ε₁ ε₂</dt><dd>${p.values.map(v=>fmt(cv(v),1)).join('  ')}</dd>
+       <dt>γ<sub>max</sub></dt><dd>${fmt(cv(2*p.radius),1)} ${un}</dd>`;
+  // Shear positive counterclockwise on the x face, so the minus sits on y. That
+  // is the convention under which turning the axes counterclockwise by θ carries
+  // the points clockwise around the circle by exactly 2θ.
+  const facePair = Tn => [[Tn[0][0], Tn[0][1]], [Tn[1][1], -Tn[0][1]]];
+  const basePts = facePair(G), primPts = facePair(P);
+  const nSym = isStress ? 'σ' : 'ε', sSym = isStress ? 'τ' : 'γ', hf = isStress ? '' : '/2';
+  const faceRows = [
+    [`X = (${nSym}<sub>xx</sub>, ${sSym}<sub>xy</sub>${hf})`, basePts[0]],
+    [`Y = (${nSym}<sub>yy</sub>, −${sSym}<sub>xy</sub>${hf})`, basePts[1]],
+    [`X′ = (${nSym}<sub>x′x′</sub>, ${sSym}<sub>x′y′</sub>${hf})`, primPts[0]],
+    [`Y′ = (${nSym}<sub>y′y′</sub>, −${sSym}<sub>x′y′</sub>${hf})`, primPts[1]]
+  ].map(([d,q]) => `<dt>${d}</dt><dd>(${fmt(cv(q[0]),1)}, ${fmt(cv(q[1]),1)})</dd>`).join('');
+  const readout = `<dl class="readout">${invRows}
+      <dt class="sect">Face by face</dt>${faceRows}
+      <dt>2θ</dt><dd>${fmt(2*th*180/Math.PI,1)}°</dd></dl>
+    <p class="note">Values in ${un}. ${sSym}${hf} counts as positive counterclockwise on the x face,
+      so the minus falls on y; turning the axes counterclockwise by θ then carries every point
+      clockwise around the circle by 2θ. X and Y stay at opposite ends of one diameter, and so
+      do X′ and Y′.</p>`;
   const otherT = transformTensor2D(isStress ? w2Strain() : sym2(W2.stress), th);
   const aligned = Math.abs(P[0][1]) < 1e-6*(maxAbs2(P)||1) && Math.abs(otherT[0][1]) > 1e-4*(maxAbs2(otherT)||1);
   band.innerHTML = `<div class="bandrow">
-      <div><p class="cap">Unchanged by rotation</p><dl class="readout">${invRows}</dl></div>
-      <div style="flex:1 1 340px"><p class="cap">Mohr's circle</p><div id="mohr2"></div></div>
-      <div style="flex:1 1 240px">${aligned
+      <div style="flex:1 1 400px; max-width:470px"><p class="cap">Mohr's circle</p>
+        <div id="mohr2"></div>${readout}</div>
+      <div style="flex:1 1 260px">${aligned
         ? `<p class="note" style="color:var(--shear)">This angle is principal for ${isStress?'stress':'strain'},
             but the ${isStress?'strain':'stress'} still carries shear: in an anisotropic material the two
             are not aligned.</p>`
-        : `<p class="note">Every direction through the point has its (σ<sub>n</sub>, τ) somewhere on this
-            circle, and the angle around the circle is twice the angle of the axes. The radius is
-            τ<sub>max</sub>, reached halfway between the two principal directions.</p>`}</div>
+        : `<p class="note">Every direction through the point has its
+            (${isStress ? 'σ<sub>n</sub>, τ' : 'ε, γ/2'}) somewhere on this circle. X′ and Y′ are the two
+            faces of the rotated element; X and Y, faint behind them, are where those faces started.
+            Half a turn of the circle is a quarter turn of the element, which is why the two points of
+            a pair sit opposite one another. The radius is
+            ${isStress ? 'τ<sub>max</sub>' : 'γ<sub>max</sub>/2'}, reached halfway between the two
+            principal directions.</p>`}</div>
     </div>`;
-  renderMohr2(isStress);
+  renderMohr2(isStress, basePts, primPts);
 }
-function renderMohr2(isStress){
+function renderMohr2(isStress, basePts, primPts){
   const T0 = isStress ? sym2(W2.stress) : w2Strain();
-  const conv = v => isStress ? toS(v) : v;
-  // The strain circle is drawn against gamma/2 so that it stays a circle.
+  // The strain circle is drawn against gamma/2, in microstrain, so that it stays a
+  // circle and the tick labels stay readable.
+  const conv = v => isStress ? toS(v) : v*1e6;
+  const unit = isStress ? u().stress : 'με';
   const p0 = principal2(T0);
   const s1 = conv(p0.values[0]), s2 = conv(p0.values[1]);
   const R = Math.abs(s1 - s2)/2, C0 = (s1 + s2)/2;
@@ -4925,17 +5050,18 @@ function renderMohr2(isStress){
   if(!isFinite(R) || R <= 1e-9 * scale2v){
     const p = (s1 + s2)/2;
     const what = isStress ? 'stresses' : 'strains';
-    host.innerHTML = Math.abs(p) <= 1e-12
+    const pv = isStress ? fmt(p,2) : fmt(p,1);
+    host.innerHTML = Math.abs(p) <= 1e-9
       ? `<p class="note">${isStress ? 'No stress applied' : 'No strain'}, so there is nothing to draw.</p>`
       : `<p class="note"><strong>${isStress ? 'Hydrostatic state.' : 'Purely areal state.'}</strong>
-         Both principal ${what} are ${isStress ? fmt(p,2) + ' ' + u().stress : fmt(p,5)}, so the circle
-         collapses to a single point at ${isStress ? 'σ<sub>n</sub>' : 'ε'} = ${isStress ? fmt(p,2) : fmt(p,5)},
-         ${isStress ? 'τ' : 'γ'} = 0. Every direction in the plane behaves alike:
+         Both principal ${what} are ${pv} ${unit}, so the circle collapses to a single point at
+         ${isStress ? 'σ<sub>n</sub>' : 'ε'} = ${pv} ${unit}, ${isStress ? 'τ' : 'γ/2'} = 0.
+         Every direction in the plane behaves alike:
          ${isStress ? 'no plane carries shear, so τ' : 'there is no shear in any direction, so γ'}<sub>max</sub>
-         is zero and every direction is principal.</p>`;
+         is zero and every direction is principal. X, Y, X′ and Y′ all sit on that one point.</p>`;
     return;
   }
-  const W = 340, H = 215, L = 46, Rm = 14, T = 12, B = 30;
+  const W = 400, H = 300, L = 46, Rm = 14, T = 12, B = 30;
   const xLo = Math.min(s2, 0), xHi = Math.max(s1, 0);
   const xPad = (xHi - xLo || 1) * 0.08;
   const spanX = (xHi - xLo) + 2*xPad || 1, spanY = 2*R*1.16 || 1;
@@ -4956,11 +5082,16 @@ function renderMohr2(isStress){
                <line x1="${x0-3}" y1="${Y(wv)}" x2="${x0}" y2="${Y(wv)}" stroke="var(--ink-soft)"/>
                <text x="${L-6}" y="${Y(wv)+3}" font-size="9" text-anchor="end" fill="var(--ink-soft)"
                  font-family="var(--mono)">${fmt(wv,0)}</text>`;
+  // Principal marks sit below the axis so they never collide with a face label.
   const marks = [[s1, isStress?'σ₁':'ε₁'], [s2, isStress?'σ₂':'ε₂']].map(([v,lab]) =>
     `<line x1="${X(v)}" y1="${Y(0)-4}" x2="${X(v)}" y2="${Y(0)+4}" stroke="var(--ink)" stroke-width="1.4"/>
-     <text x="${X(v)}" y="${Y(0)-7}" font-size="9" text-anchor="middle" fill="var(--ink)"
+     <text x="${X(v)}" y="${Y(0)+14}" font-size="9" text-anchor="middle" fill="var(--ink)"
        font-family="var(--mono)">${lab}</text>`).join('');
-  const peak = isStress ? `τmax ${fmt(R,1)}` : `γmax/2 ${fmt(R,4)}`;
+  const peak = isStress ? `τmax ${fmt(R,1)}` : `γmax/2 ${fmt(R,0)}`;
+  const dots = mohrDots([
+    {pts: basePts, labs:['X','Y'], faint:true},
+    {pts: primPts, labs:['X′','Y′'], faint:false}
+  ], conv, X, Y, X(C0), Y(0));
   host.innerHTML =
     `<svg class="mohr" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mohr circle for the current state">
       ${grid}
@@ -4972,12 +5103,15 @@ function renderMohr2(isStress){
       <line x1="${X(C0)}" y1="${Y(0)}" x2="${X(C0)}" y2="${Y(R)}" stroke="var(--shear)"
         stroke-width="1.2" stroke-dasharray="3,2"/>
       <text x="${X(C0)+4}" y="${Y(R)+9}" font-size="9" fill="var(--shear)" font-family="var(--mono)">${peak}</text>
+      ${dots}
       <text x="${W-Rm}" y="${H-B+24}" font-size="9" text-anchor="end" fill="var(--ink-soft)"
-        font-family="var(--mono)">${isStress ? 'σₙ ('+u().stress+')' : 'ε'}</text>
-      <text x="${L-6}" y="${T+8}" font-size="9" text-anchor="end" fill="var(--ink-soft)"
-        font-family="var(--mono)">${isStress ? 'τ ('+u().stress+')' : 'γ/2'}</text>
+        font-family="var(--mono)">${isStress ? 'σₙ ('+unit+')' : 'ε ('+unit+')'}</text>
+      <text x="${isStress ? L-6 : 2}" y="${T+8}" font-size="9"
+        text-anchor="${isStress ? 'end' : 'start'}" fill="var(--ink-soft)"
+        font-family="var(--mono)">${isStress ? 'τ ('+unit+')' : 'γ/2 ('+unit+')'}</text>
      </svg>`;
 }
+
 function renderElasticTransform2(band){
   const C = W2.C;
   if(!C){
@@ -5629,12 +5763,6 @@ accordingly while the stress components agree.</p>
   $('#autoBal').checked = state.autoBal;
   $('#showInner').checked = state.showInner;
   $('#showPrin').checked = state.showPrin;
-  for(const [id,v] of [['#subStress','stress'],['#subStrain','strain'],['#subElastic','elastic']])
-    $(id).setAttribute('aria-pressed', String(state.sub === v));
-  for(const [i,ax] of [[0,'X'],[1,'Y'],[2,'Z']]){
-    $('#rot'+ax).value = state.rot[i]*180/Math.PI;
-    $('#rot'+ax+'n').value = fmt(state.rot[i]*180/Math.PI, 1);
-  }
   $('#showRef').checked = state.showRef;
   $('#showArrows').checked = state.showArrows;
   $('#btnSI').setAttribute('aria-pressed', String(state.units === 'SI'));
@@ -5662,6 +5790,8 @@ accordingly while the stress components agree.</p>
   }
   $('#btn2d').setAttribute('aria-pressed', String(state.world === '2d'));
   $('#btn3d').setAttribute('aria-pressed', String(state.world === '3d'));
+  syncSubButtons();
+  syncRotControls();
 
   recompute();
   recompute2();
